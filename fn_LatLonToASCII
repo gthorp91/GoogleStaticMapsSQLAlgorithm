@@ -1,0 +1,228 @@
+ALTER FUNCTION "DBA"."LatLonToASCII"
+(
+    @Lat decimal(12,6),
+	@Lon decimal(12,6)
+)
+RETURNS varchar(12)
+AS
+BEGIN
+-- Encoding Google Maps PolyLines as per: developers.google.com/maps/documentation/utilities/polylinealgorithm 
+
+----- LAT -----
+DECLARE @LatN decimal(10,0)
+DECLARE @LatBin varchar(32)
+DECLARE @LatCount int = 0
+--variables for each 5-digit chunk(max 6)
+DECLARE @LatOne varchar(32)
+DECLARE @LatTwo varchar(32)
+DECLARE @LatThree varchar(32)
+DECLARE @LatFour varchar(32)
+DECLARE @LatFive varchar(32)
+DECLARE @LatSix varchar(32)
+
+SET @LatN = (SELECT (@Lat*100000))
+-- MINUS Decimals
+IF @LatN < 0
+BEGIN
+--Remove '-' sign, leaving 8 digit integer
+    SET @LatN = (SELECT REPLACE(@LatN, '-', ''))
+--Change Int to Binary
+    SET @LatBin = (SELECT "DBA"."IntegerToBinary"(@LatN))
+--Inverse
+    SET @LatBin = (SELECT REPLACE(@LatBin, '1', '2'))
+    SET @LatBin = (SELECT REPLACE(@LatBin, '0', '1'))
+    SET @LatBin = (SELECT REPLACE(@LatBin, '2', '0'))
+--Left-Shift Binary (negative integers)
+WHILE (@LatCount <= 32)
+BEGIN
+    SET @LatCount = @LatCount + 1
+    IF (LEFT(RIGHT(@LatBin,@LatCount),1) = '1')
+        CONTINUE
+    ELSE
+        SET @LatCount = @LatCount - 1
+        SET @LatBin = (RIGHT((LEFT(@LatBin, (31 - @LatCount)) + '1' + REPLICATE('0', (@LatCount))),31) + '0')
+        BREAK
+END
+    SET @LatCount = 0
+--Inverse again
+    SET @LatBin = (SELECT REPLACE(@LatBin, '1', '2'))
+    SET @LatBin = (SELECT REPLACE(@LatBin, '0', '1'))
+    SET @LatBin = (SELECT REPLACE(@LatBin, '2', '0'))
+END
+ELSE 
+BEGIN
+    SET @LatN = (SELECT LEFT(@LatN, 8))
+--Change Int to Binary
+    SET @LatBin = (SELECT "DBA"."IntegerToBinary"(@LatN))
+--Left-Shift Binary (positive integers)
+    SET @LatBin = (SELECT RIGHT(@LatBin, 31)) + '0'
+END
+
+--Break into 5-digit chunks from Right Side, and convert back to INT, adding a 1 to LatBinary UNLESS it is the last chunk with values(this cannot be in chunks 1-3), then add 63 to bring the LatNbers into ASCII values for conversion
+    SET @LatOne    = (SELECT "DBA"."BinaryToDecimal"('1' + (RIGHT(@LatBin, 5)))) +63
+    SET @LatTwo    = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LatBin, 10)), 5)))) + 63
+    SET @LatThree  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LatBin, 15)), 5)))) + 63
+    SET @LatFour  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 20)), 5))))
+    SET @LatFive  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 25)), 5))))  
+    SET @LatSix    = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 30)), 5))))       
+        IF @LatSix < 64
+            SET @LatFive  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 25)), 5)))) +63   
+        ELSE 
+            SET @LatFive  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LatBin, 25)), 5)))) + 63
+            SET @LatSix   = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 30)), 5)))) + 63
+        IF @LatFive < 64
+            SET @LatFour  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 20)), 5)))) + 63
+        ELSE
+            SET @LatFour  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LatBin, 20)), 5)))) + 63
+		IF @LatFour < 64
+            SET @LatThree  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 15)), 5)))) + 63
+        ELSE
+            SET @LatThree  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LatBin, 15)), 5)))) + 63
+         IF @LatThree < 64
+            SET @LatTwo  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LatBin, 10)), 5)))) + 63
+        ELSE
+            SET @LatTwo  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LatBin, 10)), 5)))) + 63
+         IF @LatTwo < 64
+            SET @LatOne  = (SELECT "DBA"."BinaryToDecimal"(RIGHT(@LatBin, 5))) + 63
+        ELSE
+            SET @LatOne  = (SELECT "DBA"."BinaryToDecimal"('1' + (RIGHT(@LatBin, 5)))) + 63
+
+
+DECLARE @LatFin varchar(6)
+BEGIN
+
+    IF @LatOne < 64
+        SET @LatFin = (SELECT char(@LatOne))
+		
+	ELSE IF (@LatOne >= 64 AND @LatTwo < 64)
+        SET @LatFin = (SELECT char(@LatOne))
+		
+    ELSE IF (@LatTwo >= 64 AND @LatThree < 64)
+        SET @LatFin = (SELECT char(@LatOne) + char(@LatTwo))		
+
+    ELSE IF (@LatThree >= 64 AND @LatFour < 64)
+        SET @LatFin = (SELECT char(@LatOne) + char(@LatTwo) + char(@LatThree))		
+		
+    ELSE IF (@LatFour >= 64 AND @LatFive < 64)
+        SET @LatFin = (SELECT char(@LatOne) + char(@LatTwo) + char(@LatThree) + char(@LatFour))
+		
+    ELSE IF (@LatFive >= 64 AND @LatSix < 64)
+        SET @LatFin = (SELECT char(@LatOne) + char(@LatTwo) + char(@LatThree) + char(@LatFour)+ char(@LatFive))
+		
+	ELSE IF @LatSix >= 64
+        SET @LatFin = (SELECT char(@LatOne) + char(@LatTwo) + char(@LatThree) + char(@LatFour) + char(@LatFive) + char(@LatSix))
+		
+END
+
+
+
+----- LON -----
+DECLARE @LonN decimal(10,0)
+DECLARE @LonBin varchar(32)
+DECLARE @LonCount int = 0
+--variables for each 5-digit chunk(max 6)
+DECLARE @LonOne varchar(32)
+DECLARE @LonTwo varchar(32)
+DECLARE @LonThree varchar(32)
+DECLARE @LonFour varchar(32)
+DECLARE @LonFive varchar(32)
+DECLARE @LonSix varchar(32)
+
+SET @LonN = (SELECT (@Lon*100000))
+-- MINUS Decimals
+IF @LonN < 0
+BEGIN
+--Remove '-' sign, leaving 8 digit integer
+    SET @LonN = (SELECT REPLACE(@LonN, '-', ''))
+--Change Int to Binary
+    SET @LonBin = (SELECT "DBA"."IntegerToBinary"(@LonN))
+--Inverse
+    SET @LonBin = (SELECT REPLACE(@LonBin, '1', '2'))
+    SET @LonBin = (SELECT REPLACE(@LonBin, '0', '1'))
+    SET @LonBin = (SELECT REPLACE(@LonBin, '2', '0'))
+--Left-Shift Binary (negative integers)
+WHILE (@LonCount <= 32)
+BEGIN
+    SET @LonCount = @LonCount + 1
+    IF (LEFT(RIGHT(@LonBin,@LonCount),1) = '1')
+        CONTINUE
+    ELSE
+        SET @LonCount = @LonCount - 1
+        SET @LonBin = (RIGHT((LEFT(@LonBin, (31 - @LonCount)) + '1' + REPLICATE('0', (@LonCount))),31) + '0')
+        BREAK
+END
+    SET @LonCount = 0
+--Inverse again
+    SET @LonBin = (SELECT REPLACE(@LonBin, '1', '2'))
+    SET @LonBin = (SELECT REPLACE(@LonBin, '0', '1'))
+    SET @LonBin = (SELECT REPLACE(@LonBin, '2', '0'))
+END
+ELSE 
+BEGIN
+    SET @LonN = (SELECT LEFT(@LonN, 8))
+--Change Int to Binary
+    SET @LonBin = (SELECT "DBA"."IntegerToBinary"(@LonN))
+--Left-Shift Binary (positive integers)
+    SET @LonBin = (SELECT RIGHT(@LonBin, 31)) + '0'
+END
+
+--Break into 5-digit chunks from Right Side, and convert back to INT, adding a 1 to LonBinary UNLESS it is the last chunk with values(this cannot be in chunks 1-3), then add 63 to bring the LonNbers into ASCII values for conversion
+    SET @LonOne    = (SELECT "DBA"."BinaryToDecimal"('1' + (RIGHT(@LonBin, 5)))) +63
+    SET @LonTwo    = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LonBin, 10)), 5)))) + 63
+    SET @LonThree  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LonBin, 15)), 5)))) + 63
+    SET @LonFour  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 20)), 5))))
+    SET @LonFive  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 25)), 5))))  
+    SET @LonSix    = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 30)), 5))))       
+        IF @LonSix < 64
+            SET @LonFive  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 25)), 5)))) +63   
+        ELSE 
+            SET @LonFive  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LonBin, 25)), 5)))) + 63
+            SET @LonSix   = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 30)), 5)))) + 63
+        IF @LonFive < 64
+            SET @LonFour  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 20)), 5)))) + 63
+        ELSE
+            SET @LonFour  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LonBin, 20)), 5)))) + 63
+		IF @LonFour < 64
+            SET @LonThree  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 15)), 5)))) + 63
+        ELSE
+            SET @LonThree  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LonBin, 15)), 5)))) + 63
+         IF @LonThree < 64
+            SET @LonTwo  = (SELECT "DBA"."BinaryToDecimal"((LEFT((RIGHT(@LonBin, 10)), 5)))) + 63
+        ELSE
+            SET @LonTwo  = (SELECT "DBA"."BinaryToDecimal"('1' + (LEFT((RIGHT(@LonBin, 10)), 5)))) + 63
+         IF @LonTwo < 64
+            SET @LonOne  = (SELECT "DBA"."BinaryToDecimal"(RIGHT(@LonBin, 5))) + 63
+        ELSE
+            SET @LonOne  = (SELECT "DBA"."BinaryToDecimal"('1' + (RIGHT(@LonBin, 5)))) + 63
+
+
+DECLARE @LonFin varchar(6)
+BEGIN
+
+    IF @LonOne < 64
+        SET @LonFin = (SELECT char(@LonOne))
+		
+	ELSE IF (@LonOne >= 64 AND @LonTwo < 64)
+        SET @LonFin = (SELECT char(@LonOne))
+		
+    ELSE IF (@LonTwo >= 64 AND @LonThree < 64)
+        SET @LonFin = (SELECT char(@LonOne) + char(@LonTwo))		
+
+    ELSE IF (@LonThree >= 64 AND @LonFour < 64)
+        SET @LonFin = (SELECT char(@LonOne) + char(@LonTwo) + char(@LonThree))		
+		
+    ELSE IF (@LonFour >= 64 AND @LonFive < 64)
+        SET @LonFin = (SELECT char(@LonOne) + char(@LonTwo) + char(@LonThree) + char(@LonFour))
+		
+    ELSE IF (@LonFive >= 64 AND @LonSix < 64)
+        SET @LonFin = (SELECT char(@LonOne) + char(@LonTwo) + char(@LonThree) + char(@LonFour)+ char(@LonFive))
+		
+	ELSE IF @LonSix >= 64
+        SET @LonFin = (SELECT char(@LonOne) + char(@LonTwo) + char(@LonThree) + char(@LonFour) + char(@LonFive) + char(@LonSix))
+		
+END
+
+
+
+RETURN (@LatFin+@LonFin)
+END
