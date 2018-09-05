@@ -1,6 +1,7 @@
 # GoogleStaticMapsSQLAlgorithm
-Google Static Maps API Polyline Encoding Algorithm within SQL, plus extra features to enable dynamic static maps with custom polylines easily mapped with Long/Lat coordinates of UK Postcodes
 
+Google Static Maps API Polyline Encoding Algorithm within SQL, plus extra features to enable dynamic static maps with custom polylines easily mapped with Long/Lat coordinates of UK Postcodes
+=============================================================================================================
 
 The following SQL procedures have been tested and run correctly on a Sybase 16 sever as stored procedures, being used and called by a SAP Crystal Report to return a HD Static Map picture, based solely on free ONS Postcode and Long/Lat data.
 
@@ -23,7 +24,7 @@ Trimmed Post Code (UK) in format XX999XX
 Lat Column with the correct Latitude decimal (5,6)
 Lon Column with the correct Longitude decimal (5,6)
  
- # Altnernativley, just the Lat/Long of any point can be provided directly to the main procedure which will output the ASCII string. This string needs to simply be appended to the following URL:
+Altnernativley, just the Lat/Long of any point can be provided directly to the main procedure which will output the ASCII string. This string needs to simply be appended to the following URL:
  
 http://maps.google.com/maps/api/staticmap?center=
 {Lat},{Lon}
